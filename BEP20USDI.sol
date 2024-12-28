@@ -99,64 +99,6 @@ abstract contract Pausable is Context {
     }
 }
 
-library SafeMath {
-    function add(uint256 a, uint256 b) internal pure returns (uint256) {
-        uint256 c = a + b;
-        require(c >= a, "SafeMath: addition overflow");
-        return c;
-    }
-
-    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-        return sub(a, b, "SafeMath: subtraction overflow");
-    }
-
-    function sub(
-        uint256 a,
-        uint256 b,
-        string memory errorMessage
-    ) internal pure returns (uint256) {
-        require(b <= a, errorMessage);
-        uint256 c = a - b;
-        return c;
-    }
-
-    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
-        if (a == 0) {
-            return 0;
-        }
-        uint256 c = a * b;
-        require(c / a == b, "SafeMath: multiplication overflow");
-        return c;
-    }
-
-    function div(uint256 a, uint256 b) internal pure returns (uint256) {
-        return div(a, b, "SafeMath: division by zero");
-    }
-
-    function div(
-        uint256 a,
-        uint256 b,
-        string memory errorMessage
-    ) internal pure returns (uint256) {
-        require(b > 0, errorMessage);
-        uint256 c = a / b;
-        return c;
-    }
-
-    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
-        return mod(a, b, "SafeMath: modulo by zero");
-    }
-
-    function mod(
-        uint256 a,
-        uint256 b,
-        string memory errorMessage
-    ) internal pure returns (uint256) {
-        require(b != 0, errorMessage);
-        return a % b;
-    }
-}
-
 contract Ownable is Context {
     address private _owner;
     event OwnershipTransferred(
@@ -199,8 +141,6 @@ contract Ownable is Context {
 }
 
 contract BEP20USDI is Pausable, IBEP20, Ownable {
-    using SafeMath for uint256;
-
     mapping(address => uint256) private _balances;
 
     mapping(address => mapping(address => uint256)) private _allowances;
@@ -278,14 +218,14 @@ contract BEP20USDI is Pausable, IBEP20, Ownable {
         uint256 amount
     ) external whenNotPaused returns (bool) {
         _transfer(sender, recipient, amount);
-        _approve(
-            sender,
-            _msgSender(),
-            _allowances[sender][_msgSender()].sub(
-                amount,
-                "BEP20: transfer amount exceeds allowance"
-            )
+        uint256 currentAllowance = _allowances[sender][_msgSender()];
+        require(
+            currentAllowance >= amount,
+            "BEP20: transfer amount exceeds allowance"
         );
+
+        _approve(sender, _msgSender(), currentAllowance - amount);
+
         return true;
     }
 
@@ -297,7 +237,7 @@ contract BEP20USDI is Pausable, IBEP20, Ownable {
         _approve(
             _msgSender(),
             spender,
-            _allowances[_msgSender()][spender].add(addedValue)
+            _allowances[_msgSender()][spender] + addedValue
         );
         return true;
     }
@@ -307,14 +247,14 @@ contract BEP20USDI is Pausable, IBEP20, Ownable {
         whenNotPaused
         returns (bool)
     {
-        _approve(
-            _msgSender(),
-            spender,
-            _allowances[_msgSender()][spender].sub(
-                subtractedValue,
-                "BEP20: decreased allowance below zero"
-            )
+        uint256 currentAllowance = _allowances[_msgSender()][spender];
+        require(
+            currentAllowance >= subtractedValue,
+            "BEP20: decreased allowance below zero"
         );
+
+        _approve(_msgSender(), spender, currentAllowance - subtractedValue);
+
         return true;
     }
 
@@ -369,29 +309,35 @@ contract BEP20USDI is Pausable, IBEP20, Ownable {
         require(recipient != address(0), "BEP20: transfer to the zero address");
         require(!_blacklist[sender], "Sender is blacklisted");
         require(!_blacklist[recipient], "Recipient is blacklisted");
-        _balances[sender] = _balances[sender].sub(
-            amount,
+        require(
+            _balances[sender] >= amount,
             "BEP20: transfer amount exceeds balance"
         );
-        _balances[recipient] = _balances[recipient].add(amount);
+
+        _balances[sender] -= amount;
+        _balances[recipient] += amount;
+
         emit Transfer(sender, recipient, amount);
     }
 
     function _mint(address account, uint256 amount) internal {
         require(account != address(0), "BEP20: mint to the zero address");
-        _totalSupply = _totalSupply.add(amount);
-        _balances[account] = _balances[account].add(amount);
+        _totalSupply = _totalSupply + amount;
+        _balances[account] = _balances[account] + amount;
         emit Transfer(address(0), account, amount);
     }
 
     function _burn(address account, uint256 amount) internal {
         require(account != address(0), "BEP20: burn from the zero address");
         require(!_blacklist[account], "Account is blacklisted");
-        _balances[account] = _balances[account].sub(
-            amount,
+        require(
+            _balances[account] >= amount,
             "BEP20: burn amount exceeds balance"
         );
-        _totalSupply = _totalSupply.sub(amount);
+
+        _balances[account] -= amount;
+        _totalSupply -= amount;
+
         emit Transfer(account, address(0), amount);
     }
 
@@ -410,13 +356,13 @@ contract BEP20USDI is Pausable, IBEP20, Ownable {
 
     function _burnFrom(address account, uint256 amount) internal {
         _burn(account, amount);
-        _approve(
-            account,
-            _msgSender(),
-            _allowances[account][_msgSender()].sub(
-                amount,
-                "BEP20: burn amount exceeds allowance"
-            )
+
+        uint256 currentAllowance = _allowances[account][_msgSender()];
+        require(
+            currentAllowance >= amount,
+            "BEP20: burn amount exceeds allowance"
         );
+
+        _approve(account, _msgSender(), currentAllowance - amount);
     }
 }
